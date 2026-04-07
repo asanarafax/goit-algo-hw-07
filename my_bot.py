@@ -1,7 +1,6 @@
 from collections import UserDict
 from datetime import datetime, timedelta
 
-
 # ====== Base Classes ======
 class Field:
     def __init__(self, value):
@@ -116,14 +115,17 @@ def input_error(func):
         try:
             return func(*args, **kwargs)
         except Exception as e:
-            return str(e)
+            return f"Error: {e}"
     return wrapper
 
 
 # ====== Command Handlers ======
 @input_error
 def add_contact(args, book: AddressBook):
-    name, phone, *_ = args
+    if not args:
+        raise ValueError("Please provide a name")
+    name = args[0]
+    phone = args[1] if len(args) > 1 else None
     record = book.find(name)
     message = "Contact updated."
     if record is None:
@@ -151,7 +153,7 @@ def show_phones(args, book: AddressBook):
     name = args[0]
     record = book.find(name)
     if record:
-        return "; ".join(p.value for p in record.phones)
+        return "; ".join(p.value for p in record.phones) if record.phones else "No phones"
     else:
         raise ValueError("Contact not found")
 
@@ -174,11 +176,11 @@ def show_birthday(args, book: AddressBook):
     if record and record.birthday:
         return record.birthday.value.strftime("%d.%m.%Y")
     else:
-        raise ValueError("Birthday not found")
+        return "This contact has no birthday"
 
 
 @input_error
-def birthdays(args, book: AddressBook):
+def birthdays(book: AddressBook):
     upcoming = book.get_upcoming_birthdays()
     if not upcoming:
         return "No upcoming birthdays."
@@ -195,6 +197,7 @@ def parse_input(user_input):
 def main():
     book = AddressBook()
     print("Welcome to the assistant bot!")
+    print("Type 'help' to see available commands.")
     while True:
         user_input = input("Enter a command: ")
         command, args = parse_input(user_input)
@@ -205,6 +208,17 @@ def main():
 
         elif command == "hello":
             print("How can I help you?")
+
+        elif command == "help":
+            print("""Available commands:
+  add [name] [phone] - Add a new contact
+  change [name] [old_phone] [new_phone] - Change phone
+  phone [name] - Show phones
+  all - Show all contacts
+  add-birthday [name] [DD.MM.YYYY] - Add birthday
+  show-birthday [name] - Show birthday
+  birthdays - Show upcoming birthdays
+  close/exit - Exit the program""")
 
         elif command == "add":
             print(add_contact(args, book))
@@ -225,10 +239,10 @@ def main():
             print(show_birthday(args, book))
 
         elif command == "birthdays":
-            print(birthdays(args, book))
+            print(birthdays(book))
 
         else:
-            print("Invalid command.")
+            print("Invalid command. Type 'help' for available commands.")
 
 
 if __name__ == "__main__":
