@@ -1,5 +1,6 @@
 from collections import UserDict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
+import pickle
 
 # ====== Base Classes ======
 class Field:
@@ -27,7 +28,8 @@ class Phone(Field):
 class Birthday(Field):
     def __init__(self, value):
         try:
-            self.value = datetime.strptime(value, "%d.%m.%Y").date()
+            date_obj = datetime.strptime(value, "%d.%m.%Y").date()
+            super().__init__(date_obj)
         except ValueError:
             raise ValueError("Invalid date format. Use DD.MM.YYYY")
 
@@ -86,7 +88,7 @@ class AddressBook(UserDict):
             raise KeyError("Record not found")
 
     def get_upcoming_birthdays(self):
-        today = datetime.today().date()
+        today = date.today()
         upcoming = []
         for record in self.data.values():
             if record.birthday:
@@ -96,8 +98,7 @@ class AddressBook(UserDict):
 
                 delta = (bday_this_year - today).days
                 if 0 <= delta <= 7:
-                    # Переносимо на понеділок, якщо вихідний
-                    if bday_this_year.weekday() >= 5:
+                    if bday_this_year.weekday() >= 5:  # weekend
                         bday_this_year += timedelta(days=(7 - bday_this_year.weekday()))
                     upcoming.append({
                         "name": record.name.value,
@@ -109,23 +110,33 @@ class AddressBook(UserDict):
         return "\n".join(str(record) for record in self.data.values()) if self.data else "AddressBook is empty"
 
 
+# ====== Save / Load ======
+def save_data(book, filename="addressbook.pkl"):
+    with open(filename, "wb") as f:
+        pickle.dump(book, f)
+
+def load_data(filename="addressbook.pkl"):
+    try:
+        with open(filename, "rb") as f:
+            return pickle.load(f)
+    except FileNotFoundError:
+        return AddressBook()
+
+
 # ====== Decorator ======
 def input_error(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except Exception as e:
-            return f"Error: {e}"
+            return f"Error: {str(e)}"
     return wrapper
 
 
 # ====== Command Handlers ======
 @input_error
 def add_contact(args, book: AddressBook):
-    if not args:
-        raise ValueError("Please provide a name")
-    name = args[0]
-    phone = args[1] if len(args) > 1 else None
+    name, phone, *_ = args
     record = book.find(name)
     message = "Contact updated."
     if record is None:
@@ -176,49 +187,66 @@ def show_birthday(args, book: AddressBook):
     if record and record.birthday:
         return record.birthday.value.strftime("%d.%m.%Y")
     else:
-        return "This contact has no birthday"
+        raise ValueError("Birthday not found")
 
 
 @input_error
-def birthdays(book: AddressBook):
+def birthdays(args, book: AddressBook):
     upcoming = book.get_upcoming_birthdays()
     if not upcoming:
         return "No upcoming birthdays."
     return "\n".join([f"{item['name']}: {item['birthday']}" for item in upcoming])
 
 
+@input_error
+def delete_contact(args, book: AddressBook):
+    name = args[0]
+    book.delete(name)
+    return "Contact deleted."
+
+
 # ====== Helper ======
 def parse_input(user_input):
     parts = user_input.strip().split()
+    if not parts:
+        return "", []
     return parts[0].lower(), parts[1:]
+
+
+def show_help():
+    return (
+        "Available commands:\n"
+        "  add <name> <phone> - Add new contact\n"
+        "  change <name> <old_phone> <new_phone> - Change phone\n"
+        "  phone <name> - Show phones\n"
+        "  all - Show all contacts\n"
+        "  add-birthday <name> <DD.MM.YYYY> - Add birthday\n"
+        "  show-birthday <name> - Show birthday\n"
+        "  birthdays - Show upcoming birthdays\n"
+        "  delete <name> - Delete contact\n"
+        "  help - Show this help\n"
+        "  exit/close - Exit program\n"
+    )
 
 
 # ====== Main Loop ======
 def main():
-    book = AddressBook()
+    book = load_data()
     print("Welcome to the assistant bot!")
-    print("Type 'help' to see available commands.")
     while True:
         user_input = input("Enter a command: ")
         command, args = parse_input(user_input)
 
+        if not command:
+            continue
+
         if command in ["close", "exit"]:
+            save_data(book)
             print("Good bye!")
             break
 
         elif command == "hello":
             print("How can I help you?")
-
-        elif command == "help":
-            print("""Available commands:
-  add [name] [phone] - Add a new contact
-  change [name] [old_phone] [new_phone] - Change phone
-  phone [name] - Show phones
-  all - Show all contacts
-  add-birthday [name] [DD.MM.YYYY] - Add birthday
-  show-birthday [name] - Show birthday
-  birthdays - Show upcoming birthdays
-  close/exit - Exit the program""")
 
         elif command == "add":
             print(add_contact(args, book))
@@ -239,11 +267,18 @@ def main():
             print(show_birthday(args, book))
 
         elif command == "birthdays":
-            print(birthdays(book))
+            print(birthdays(args, book))
+
+        elif command == "delete":
+            print(delete_contact(args, book))
+
+        elif command == "help":
+            print(show_help())
 
         else:
-            print("Invalid command. Type 'help' for available commands.")
+            print("Invalid command. Type 'help' to see available commands.")
 
 
 if __name__ == "__main__":
     main()
+
